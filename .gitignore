@@ -7,3 +7,4 @@ lib/
 *.duckdb
 .Rhistory
 .RData
+tmp/

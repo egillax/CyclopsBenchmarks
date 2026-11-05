@@ -150,6 +150,13 @@ INNER JOIN @cdm_database_schema.observation_period op
 GROUP BY d.person_id;
 "
 
+# Andromeda (and R's temp files in the fit processes) in a folder next to the project, not the system temp
+# drive: BENCH_TEMP, or ./tmp
+tempFolder <- normalizePath(if (nzchar(Sys.getenv("BENCH_TEMP"))) Sys.getenv("BENCH_TEMP") else "tmp", mustWork = FALSE)
+dir.create(tempFolder, recursive = TRUE, showWarnings = FALSE)
+options(andromedaTempFolder = tempFolder)
+Sys.setenv(TMPDIR = tempFolder, TMP = tempFolder, TEMP = tempFolder)   # inherited by child R processes
+
 # ---- Run ---------------------------------------------------------------------------------------
 
 folder <- file.path(outputFolder, databaseLabel)

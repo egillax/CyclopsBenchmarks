@@ -49,6 +49,14 @@ installCyclops <- function(developRef = "develop", newtonTarball = NULL) {
 
 # ---- Setup -------------------------------------------------------------------------------------
 
+# Andromeda (and R's temp files in the fit processes) in a folder next to the project, not the system temp
+# drive: BENCH_TEMP, or ./tmp
+tempFolder <- normalizePath(if (nzchar(Sys.getenv("BENCH_TEMP"))) Sys.getenv("BENCH_TEMP") else "tmp", mustWork = FALSE)
+dir.create(tempFolder, recursive = TRUE, showWarnings = FALSE)
+options(andromedaTempFolder = tempFolder)
+Sys.setenv(TMPDIR = tempFolder, TMP = tempFolder, TEMP = tempFolder)   # inherited by child R processes
+
+
 suppressPackageStartupMessages(library(dplyr))
 if (nzchar(libHades)) .libPaths(c(normalizePath(libHades), .libPaths()))
 folder <- file.path(outputFolder, databaseLabel)
@@ -268,6 +276,7 @@ fitPlan <- function() {
 .fitOne <- function(spec) {
   suppressPackageStartupMessages(library(Cyclops))
   null2na <- function(x) if (is.null(x) || length(x) == 0) NA else x
+  options(andromedaTempFolder = spec$tempFolder)
   out <- list(version = as.character(utils::packageVersion("Cyclops")),
               sha = tryCatch(utils::packageDescription("Cyclops")$RemoteSha, error = function(e) NA))
   warnings <- character()
@@ -339,7 +348,7 @@ runFit <- function(p, kind, rep, timeout) {
   file <- normalizePath(file.path(private, sprintf("%s_%s.zip", p$design, kind)))
   info <- readRDS(paste0(file, ".info.rds"))
   spec <- c(as.list(p[, c("workload", "design", "variant", "threads", "fitter")]),
-            list(file = file, treatmentId = null2na(info$treatmentId)))
+            list(file = file, treatmentId = null2na(info$treatmentId), tempFolder = tempFolder))
   res <- tryCatch(
     callr::r(.fitOne, args = list(spec = spec), libpath = c(libs[[p$lib]], .libPaths()), timeout = timeout,
              user_profile = FALSE), # an renv project's .Rprofile would reset the library path
