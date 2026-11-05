@@ -469,7 +469,10 @@ runAll <- function() {
     } else pass$keys
     for (key in keys) {
       full <- readRows(resultsFile)
-      if (!is.null(full) && any(full$key == key & full$rep == pass$rep & !grepl("^ERROR", full$status))) next
+      # errors and budget skips are tried again; timeouts too with BENCH_RETRY_TIMEOUT=1 (and a longer timeout)
+      retry <- grepl("^ERROR", full$status) | full$status == "SKIPPED_BUDGET" |
+        (full$status == "TIMEOUT" & nzchar(Sys.getenv("BENCH_RETRY_TIMEOUT")))
+      if (!is.null(full) && any(full$key == key & full$rep == pass$rep & !retry)) next
       p <- plan[plan$key == key, ]
       elapsed <- as.numeric(difftime(Sys.time(), start, units = "secs"))
       expected <- estimate(key, smoke, full)
@@ -518,8 +521,9 @@ report <- function() {
     group_by(env, workload, design, config, threads, key) %>%
     summarise(runs = sum(!is.na(seconds)), seconds = median(seconds, na.rm = TRUE),
               status = paste(unique(status), collapse = "/"), iterations = median(iterations, na.rm = TRUE),
-              variance = median(variance, na.rm = TRUE), n_rows = max(n_rows, na.rm = TRUE),
-              n_events = max(n_events, na.rm = TRUE), n_covariates = max(n_covariates, na.rm = TRUE),
+              variance = median(variance, na.rm = TRUE), n_rows = suppressWarnings(max(n_rows, na.rm = TRUE)),
+              n_events = suppressWarnings(max(n_events, na.rm = TRUE)),
+              n_covariates = suppressWarnings(max(n_covariates, na.rm = TRUE)),
               n_nonzero_coefs = median(n_nonzero_coefs, na.rm = TRUE), log_lik = median(log_lik, na.rm = TRUE),
               key_estimate = first(key_estimate), key_se_or_ci = first(key_se_or_ci), .groups = "drop") %>%
     group_by(env, workload, design, threads) %>%
