@@ -35,6 +35,9 @@ budgetHours    <- as.numeric(env("BENCH_BUDGET_HOURS", 4))       # total for the
 timeoutMinutes <- as.numeric(env("BENCH_TIMEOUT_MINUTES", 60))      # per fit (TIMEOUT)
 smokeFraction  <- 0.05
 maxReps        <- 3        # extra repetitions of fits under 5 minutes, while the budget allows
+# PLP tasks: name:outcomeId:riskWindowEnd:removeSubjectsWithPriorOutcome, comma-separated; the data of task "plp" are
+# in <dataFolder>/plpData (extract_cdm.R), of any other task in <dataFolder>/plpData_<name>
+plpTasks       <- env("BENCH_PLP_TASKS", "plp:6:1095:1")
 coxOutcomeId   <- NA       # NA: death (4) if it has >= 1000 events in the PS cohort, else AMI (3)
 
 # Install develop (and the Newton branch from a source tarball, if you have one) into separate libraries:
@@ -119,12 +122,18 @@ preparePs <- function(fraction, file) {
   .save(data.frame(rowId = population$rowId, y = population$treatment), tidy$covariates, file)
 }
 
-preparePlp <- function(fraction, file) {
-  plpData <- PatientLevelPrediction::loadPlpData(file.path(dataFolder, "plpData"))
-  population <- PatientLevelPrediction::createStudyPopulation(plpData, outcomeId = 6,
+plpTaskList <- lapply(strsplit(strsplit(plpTasks, ",")[[1]], ":"), function(x)
+  list(name = x[1], design = if (x[1] == "plp") "plp" else paste0("plp_", x[1]),
+       folder = if (x[1] == "plp") "plpData" else paste0("plpData_", x[1]),
+       outcomeId = as.numeric(x[2]), riskWindowEnd = as.numeric(x[3]), removePrior = x[4] == "1"))
+names(plpTaskList) <- sapply(plpTaskList, `[[`, "design")
+
+preparePlp <- function(fraction, file, task) {
+  plpData <- PatientLevelPrediction::loadPlpData(file.path(dataFolder, task$folder))
+  population <- PatientLevelPrediction::createStudyPopulation(plpData, outcomeId = task$outcomeId,
     populationSettings = PatientLevelPrediction::createStudyPopulationSettings(
-      washoutPeriod = 365, removeSubjectsWithPriorOutcome = TRUE, requireTimeAtRisk = FALSE,
-      riskWindowStart = 1, riskWindowEnd = 1095))
+      washoutPeriod = 365, removeSubjectsWithPriorOutcome = task$removePrior, requireTimeAtRisk = FALSE,
+      riskWindowStart = 1, riskWindowEnd = task$riskWindowEnd))
   y <- as.numeric(population$outcomeCount > 0)
   set.seed(42) # stratified 75% training split, as PLP's default split
   train <- unlist(lapply(c(0, 1), function(v) {
@@ -219,9 +228,9 @@ prepareSccs <- function(fraction, file, design) {
 }
 
 datasets <- data.frame(
-  workload = c("ps", "plp", "cox", "sccs", "sccs"),
-  design   = c("ps", "plp", "cox", "season_calendar", "age_season"),
-  needs    = c("cmData.zip", "plpData", "cmData.zip", "sccsData.zip", "sccsData.zip"),
+  workload = c("ps", rep("plp", length(plpTaskList)), "cox", "sccs", "sccs"),
+  design   = c("ps", names(plpTaskList), "cox", "season_calendar", "age_season"),
+  needs    = c("cmData.zip", sapply(plpTaskList, `[[`, "folder"), "cmData.zip", "sccsData.zip", "sccsData.zip"),
   stringsAsFactors = FALSE)
 
 prepareAll <- function() {
@@ -237,7 +246,7 @@ prepareAll <- function() {
       fraction <- if (kind == "smoke") smokeFraction else 1
       say("Preparing ", d$design, " (", kind, ")")
       t <- system.time(info <- tryCatch(switch(d$workload,
-        ps = preparePs(fraction, file), plp = preparePlp(fraction, file), cox = prepareCox(fraction, file),
+        ps = preparePs(fraction, file), plp = preparePlp(fraction, file, plpTaskList[[d$design]]), cox = prepareCox(fraction, file),
         sccs = prepareSccs(fraction, file, d$design)),
         error = function(e) { say("  FAILED: ", conditionMessage(e)); NULL }))[["elapsed"]]
       if (!is.null(info)) say(sprintf("  %s rows, %s events, %s covariates, %s non-zeros (%.1f min)",

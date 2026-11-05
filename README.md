@@ -45,7 +45,7 @@ cd CyclopsBenchmarks
    ```
    Settings can also be given as environment variables: `BENCH_LABEL`, `BENCH_DATA`, `BENCH_OUT`,
    `BENCH_LIB_DEVELOP`, `BENCH_LIB_NEWTON`, `BENCH_LIB_HADES`, `BENCH_BUDGET_HOURS`, `BENCH_TIMEOUT_MINUTES`,
-   `BENCH_TEMP` (Andromeda and temp files; default `./tmp`, also used by `extract_cdm.R`).
+   `BENCH_PLP_TASKS` (extra PLP tasks, see the Settings block), `BENCH_TEMP` (Andromeda and temp files; default `./tmp`, also used by `extract_cdm.R`).
    Rerunning resumes: finished fits are skipped. `Rscript run_benchmark.R report` rebuilds the summary only.
 
 Share `summary.csv`, `results_clean.csv`, `environment.txt` and `REPORT.md` once you've checked that your data
