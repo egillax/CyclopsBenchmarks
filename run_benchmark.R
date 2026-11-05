@@ -182,7 +182,7 @@ prepareSccs <- function(fraction, file, design) {
   names(exposures) <- c("ibuprofen", "naproxen")
   eras <- c(lapply(names(exposures), function(n) SelfControlledCaseSeries::createEraCovariateSettings(
       label = paste("Exposure", n), includeEraIds = exposures[[n]], start = 0, end = 0, endAnchor = "era end",
-      exposureOfInterest = TRUE, profileLikelihood = TRUE)),
+      profileLikelihood = TRUE)),
     list(SelfControlledCaseSeries::createEraCovariateSettings(label = "Pre-exposure", includeEraIds = exposures,
       stratifyById = TRUE, start = -30, end = -1, endAnchor = "era start")))
   minCases <- if (fraction < 1) 100 else 10000
