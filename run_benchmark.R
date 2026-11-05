@@ -341,7 +341,8 @@ runFit <- function(p, kind, rep, timeout) {
   spec <- c(as.list(p[, c("workload", "design", "variant", "threads", "fitter")]),
             list(file = file, treatmentId = null2na(info$treatmentId)))
   res <- tryCatch(
-    callr::r(.fitOne, args = list(spec = spec), libpath = c(libs[[p$lib]], .libPaths()), timeout = timeout),
+    callr::r(.fitOne, args = list(spec = spec), libpath = c(libs[[p$lib]], .libPaths()), timeout = timeout,
+             user_profile = FALSE), # an renv project's .Rprofile would reset the library path
     error = function(e) list(status = if (inherits(e, "callr_timeout_error")) "TIMEOUT" else
       paste("ERROR:", gsub("[\r\n,]+", " ", conditionMessage(e)))))
   if (!is.null(res$version) && utils::compareVersion(res$version, "4.0.0") < 0) {
