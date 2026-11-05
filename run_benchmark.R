@@ -28,6 +28,7 @@ dataFolder     <- env("BENCH_DATA", file.path("cyclops_benchmark_data", database
 outputFolder   <- env("BENCH_OUT", "cyclops_benchmark_results")
 
 libDevelop     <- env("BENCH_LIB_DEVELOP", "lib/cyclops-develop")   # Cyclops develop, installed by installCyclops() below
+lib371         <- env("BENCH_LIB_371", "lib/cyclops-3.7.1")      # Cyclops 3.7.1 (CRAN), installed by installCyclops()
 libNewton      <- env("BENCH_LIB_NEWTON", "lib/cyclops-newton")   # optional: the active-set Newton branch (skipped if absent)
 libHades       <- env("BENCH_LIB_HADES", "")   # extra library with the HADES packages, if not in the default path
 
@@ -38,10 +39,18 @@ maxReps        <- 3        # extra repetitions of fits under 5 minutes, while th
 # PLP tasks: name:outcomeId:riskWindowEnd:removeSubjectsWithPriorOutcome, comma-separated; the data of task "plp" are
 # in <dataFolder>/plpData (extract_cdm.R), of any other task in <dataFolder>/plpData_<name>
 plpTasks       <- env("BENCH_PLP_TASKS", "plp:6:1095:1")
+# Configurations in run order: develop default, develop super, CRAN 3.7.1, then the Newton branch (if installed; PS and
+# PLP only); "legacy" (the 4.0 legacy fitter) can be added
+configsToRun   <- strsplit(env("BENCH_CONFIGS", "default,super,3.7.1,newton"), ",")[[1]]
 coxOutcomeId   <- NA       # NA: death (4) if it has >= 1000 events in the PS cohort, else AMI (3)
 
 # Install develop (and the Newton branch from a source tarball, if you have one) into separate libraries:
 installCyclops <- function(developRef = "develop", newtonTarball = NULL) {
+  dir.create(lib371, recursive = TRUE, showWarnings = FALSE)
+  # 3.7.1 is CRAN's current release (a binary on Windows and macOS); once it is archived, use
+  # remotes::install_version("Cyclops", "3.7.1", lib = lib371, upgrade = "never", dependencies = FALSE)
+  utils::install.packages("Cyclops", lib = lib371, repos = "https://cloud.r-project.org", dependencies = FALSE)
+  if (utils::packageVersion("Cyclops", lib.loc = lib371) != "3.7.1") warning("lib371 does not hold Cyclops 3.7.1")
   dir.create(libDevelop, recursive = TRUE, showWarnings = FALSE)
   remotes::install_github("OHDSI/Cyclops", ref = developRef, lib = libDevelop, upgrade = "never", dependencies = FALSE)
   if (!is.null(newtonTarball)) {
@@ -75,7 +84,8 @@ say <- function(...) {
 }
 hms <- function(s) if (is.na(s)) "?" else sprintf("%d:%02d", as.integer(s %/% 3600), as.integer((s %% 3600) %/% 60))
 null2na <- function(x) if (is.null(x) || length(x) == 0) NA else x
-libs <- c(develop = normalizePath(libDevelop, mustWork = FALSE), newton = normalizePath(libNewton, mustWork = FALSE))
+libs <- c(develop = normalizePath(libDevelop, mustWork = FALSE), newton = normalizePath(libNewton, mustWork = FALSE),
+          v371 = normalizePath(lib371, mustWork = FALSE))
 haveNewton <- file.exists(file.path(libs[["newton"]], "Cyclops"))
 
 # ---- Data preparation (once; a full and a smoke-test version of each workload) -----------------
@@ -260,10 +270,13 @@ prepareAll <- function() {
 # A row per fit: config (lib + fitter), workload, design, variant (what is fitted), threads
 fitPlan <- function() {
   lr <- c("ps", "plp")
-  configs <- data.frame(config = c("default", "super", "legacy", "newton"),
-                        lib = c("develop", "develop", "develop", "newton"),
-                        fitter = c("default", "super", "legacy", "super"), stringsAsFactors = FALSE)
+  configs <- data.frame(config = c("default", "super", "newton", "legacy", "3.7.1"),
+                        lib = c("develop", "develop", "newton", "develop", "v371"),
+                        fitter = c("default", "super", "super", "legacy", NA), stringsAsFactors = FALSE)
   if (!haveNewton) configs <- configs[configs$config != "newton", ]
+  if (!file.exists(file.path(libs[["v371"]], "Cyclops"))) configs <- configs[configs$config != "3.7.1", ]
+  configs <- configs[configs$config %in% configsToRun, ]
+  configs <- configs[order(match(configs$config, configsToRun)), ]
   rows <- list()
   for (k in seq_len(nrow(configs))) {
     cfg <- configs[k, ]
@@ -290,7 +303,7 @@ fitPlan <- function() {
               sha = tryCatch(utils::packageDescription("Cyclops")$RemoteSha, error = function(e) NA))
   warnings <- character()
   keep <- function(w) { warnings <<- c(warnings, conditionMessage(w)); invokeRestart("muffleWarning") }
-  ctl <- function(args) { args$fitter <- spec$fitter; do.call(createControl, args) }
+  ctl <- function(args) { if (!is.na(spec$fitter)) args$fitter <- spec$fitter; do.call(createControl, args) }
   if (spec$workload == "sccs") {
     suppressPackageStartupMessages(library(SelfControlledCaseSeries))
     interval <- loadSccsIntervalData(spec$file)
@@ -363,7 +376,7 @@ runFit <- function(p, kind, rep, timeout) {
              user_profile = FALSE), # an renv project's .Rprofile would reset the library path
     error = function(e) list(status = if (inherits(e, "callr_timeout_error")) "TIMEOUT" else
       paste("ERROR:", gsub("[\r\n,]+", " ", conditionMessage(e)))))
-  if (!is.null(res$version) && utils::compareVersion(res$version, "4.0.0") < 0) {
+  if (!is.null(res$version) && (p$config == "3.7.1") != (res$version == "3.7.1")) {
     stop("Config ", p$config, " loaded Cyclops ", res$version, " from ", libs[[p$lib]])
   }
   if (!is.null(res$beta) && kind == "full") {
@@ -475,6 +488,7 @@ runAll <- function() {
 report <- function() {
   results <- readRows(resultsFile)
   if (is.null(results)) return(invisible(NULL))
+  results <- results[results$config %in% configsToRun, ]
   coefDiff <- function(key, config) {
     ref <- file.path(private, "coefs", sprintf("%s_1.rds", gsub("/", "_", sub("/[^/]+$", "/default", key))))
     this <- file.path(private, "coefs", sprintf("%s_1.rds", gsub("/", "_", key)))
@@ -492,11 +506,12 @@ report <- function() {
               n_nonzero_coefs = median(n_nonzero_coefs, na.rm = TRUE), log_lik = median(log_lik, na.rm = TRUE),
               key_estimate = first(key_estimate), key_se_or_ci = first(key_se_or_ci), .groups = "drop") %>%
     group_by(env, workload, design, threads) %>%
-    mutate(speedup_vs_legacy = seconds[config == "legacy"][1] / seconds,
+    mutate(speedup_vs_371 = seconds[config == "3.7.1"][1] / seconds,
+           speedup_vs_legacy = seconds[config == "legacy"][1] / seconds,
            speedup_vs_default = seconds[config == "default"][1] / seconds) %>%
     ungroup() %>%
     mutate(max_abs_coef_diff_vs_default = mapply(coefDiff, key, config)) %>%
-    arrange(workload, design, threads, match(config, c("legacy", "default", "super", "newton"))) %>%
+    arrange(workload, design, threads, match(config, c("3.7.1", "legacy", "default", "super", "newton"))) %>%
     select(-key)
   summary <- as.data.frame(summary)
   summary[] <- lapply(summary, function(x) if (is.numeric(x)) ifelse(is.finite(x), x, NA) else x)
@@ -505,15 +520,15 @@ report <- function() {
 
   md <- c(sprintf("# Cyclops 4.0 benchmark: %s", databaseLabel), "",
           sprintf("Cyclops develop %s; %s", paste(unique(na.omit(results$cyclops_sha)), collapse = ", "), .machine()), "",
-          "Median seconds of the Cyclops call(s) only; each fit in a fresh R process. Speed-up relative to `legacy`.", "")
+          "Median seconds of the Cyclops call(s) only; each fit in a fresh R process. Speed-up relative to Cyclops 3.7.1.", "")
   for (w in unique(summary$workload)) {
     s <- summary[summary$workload == w, ]
     md <- c(md, sprintf("## %s", w), "", sprintf("%s rows, %s events, %s covariates", s$n_rows[1], s$n_events[1], s$n_covariates[1]), "",
-            "| design | threads | config | seconds | runs | status | speed-up vs legacy | variance | non-zero | estimate | CI | max coef diff vs default |",
+            "| design | threads | config | seconds | runs | status | speed-up vs 3.7.1 | variance | non-zero | estimate | CI | max coef diff vs default |",
             "|---|---:|---|---:|---:|---|---:|---:|---:|---|---|---:|",
             sprintf("| %s | %d | %s | %s | %d | %s | %s | %s | %s | %s | %s | %s |", s$design, s$threads, s$config,
                     ifelse(is.na(s$seconds), "-", sprintf("%.1f", s$seconds)), s$runs, s$status,
-                    ifelse(is.na(s$speedup_vs_legacy), "-", sprintf("%.1fx", s$speedup_vs_legacy)),
+                    ifelse(is.na(s$speedup_vs_371), "-", sprintf("%.1fx", s$speedup_vs_371)),
                     ifelse(is.na(s$variance), "-", signif(s$variance, 3)), ifelse(is.na(s$n_nonzero_coefs), "-", s$n_nonzero_coefs),
                     ifelse(is.na(s$key_estimate), "", s$key_estimate), ifelse(is.na(s$key_se_or_ci), "", s$key_se_or_ci),
                     ifelse(is.na(s$max_abs_coef_diff_vs_default), "-", signif(s$max_abs_coef_diff_vs_default, 2))), "")
@@ -550,7 +565,7 @@ writeEnvironment <- function() {
                paste("Packages:", paste(pk, versions, sep = " ", collapse = ", ")),
                sprintf("Settings: budget %s h, timeout %s min, smoke fraction %s, max reps %s", budgetHours, timeoutMinutes,
                        smokeFraction, maxReps),
-               "Deviations from the slide instructions: no Cyclops 3.7.1 (user's choice); cohorts from extract_cdm.R (plain SQL);",
+               "Deviations from the slide instructions: cohorts from extract_cdm.R (plain SQL);",
                "COX outcome is death where usable, else AMI; COXC (left-censored Cox) not run; super only for LR."),
              file.path(folder, "environment.txt"))
 }
