@@ -42,6 +42,7 @@ plpTasks       <- env("BENCH_PLP_TASKS", "plp:6:1095:1")
 # Configurations in run order: develop default, develop super, CRAN 3.7.1, then the Newton branch (if installed; PS and
 # PLP only); "legacy" (the 4.0 legacy fitter) can be added
 configsToRun   <- strsplit(env("BENCH_CONFIGS", "default,super,3.7.1,newton"), ",")[[1]]
+workloadsToRun <- strsplit(env("BENCH_WORKLOADS", "ps,plp,cox,sccs"), ",")[[1]]   # a subset, e.g. "ps,plp"
 coxOutcomeId   <- NA       # NA: death (4) if it has >= 1000 events in the PS cohort, else AMI (3)
 
 # Install develop (and the Newton branch from a source tarball, if you have one) into separate libraries:
@@ -242,6 +243,7 @@ datasets <- data.frame(
   design   = c("ps", names(plpTaskList), "cox", "season_calendar", "age_season"),
   needs    = c("cmData.zip", sapply(plpTaskList, `[[`, "folder"), "cmData.zip", "sccsData.zip", "sccsData.zip"),
   stringsAsFactors = FALSE)
+datasets <- datasets[datasets$workload %in% workloadsToRun, ]
 
 prepareAll <- function() {
   for (i in seq_len(nrow(datasets))) {
