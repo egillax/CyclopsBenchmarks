@@ -421,21 +421,35 @@ estimate <- function(key, smoke, full) {
   s * ratio
 }
 
+# Each configuration's library must hold the right Cyclops before anything runs
+checkLibraries <- function(plan) {
+  for (cfg in unique(plan$config)) {
+    lib <- libs[[plan$lib[plan$config == cfg][1]]]
+    v <- tryCatch(as.character(utils::packageVersion("Cyclops", lib.loc = lib)), error = function(e) NA)
+    ok <- !is.na(v) && if (cfg == "3.7.1") v == "3.7.1" else utils::compareVersion(v, "4.0.0") >= 0
+    if (!ok) stop(sprintf("Config %s needs Cyclops %s in %s, found %s. Run installCyclops() (see README).",
+                          cfg, if (cfg == "3.7.1") "3.7.1" else ">= 4.0", lib, if (is.na(v)) "none" else v))
+    say(sprintf("Config %-8s Cyclops %s from %s", cfg, v, lib))
+  }
+}
+
 runAll <- function() {
   plan <- fitPlan()
   plan <- plan[file.exists(file.path(private, sprintf("%s_full.zip.info.rds", plan$design))), ]
   say(nrow(plan), " fits planned: ", paste(unique(plan$config), collapse = ", "))
+  checkLibraries(plan)
 
   # Smoke test: every fit once on the subsample
   smoke <- readRows(smokeFile)
   for (i in seq_len(nrow(plan))) {
     p <- plan[i, ]
-    if (!is.null(smoke) && p$key %in% smoke$key) next
+    if (!is.null(smoke) && p$key %in% smoke$key[!grepl("^ERROR", smoke$status)]) next # errors are retried
     row <- runFit(p, "smoke", 1, timeoutMinutes * 60)
     appendRow(row, smokeFile)
     say(sprintf("smoke %-40s %7.1f s  %s", p$key, row$seconds, row$status))
   }
   smoke <- readRows(smokeFile)
+  if (!is.null(smoke)) smoke <- smoke[!duplicated(smoke$key, fromLast = TRUE), ]
   if (is.null(smoke)) { say("Nothing to run"); return(invisible(NULL)) }
   bad <- smoke[!(smoke$status %in% c("SUCCESS", "OK", "NO_CONVERGENCE")) , c("key", "status")]
   if (nrow(bad) > 0) { say("Smoke-test problems (these fits still run):"); for (j in seq_len(nrow(bad))) say("  ", bad$key[j], ": ", bad$status[j]) }
@@ -452,7 +466,7 @@ runAll <- function() {
     } else pass$keys
     for (key in keys) {
       full <- readRows(resultsFile)
-      if (!is.null(full) && any(full$key == key & full$rep == pass$rep)) next
+      if (!is.null(full) && any(full$key == key & full$rep == pass$rep & !grepl("^ERROR", full$status))) next
       p <- plan[plan$key == key, ]
       elapsed <- as.numeric(difftime(Sys.time(), start, units = "secs"))
       expected <- estimate(key, smoke, full)
