@@ -513,7 +513,7 @@ report <- function() {
   }
   summary <- results %>%
     group_by(env, workload, design, config, threads, key) %>%
-    summarise(seconds = median(seconds, na.rm = TRUE), runs = sum(!is.na(seconds)),
+    summarise(runs = sum(!is.na(seconds)), seconds = median(seconds, na.rm = TRUE),
               status = paste(unique(status), collapse = "/"), iterations = median(iterations, na.rm = TRUE),
               variance = median(variance, na.rm = TRUE), n_rows = max(n_rows, na.rm = TRUE),
               n_events = max(n_events, na.rm = TRUE), n_covariates = max(n_covariates, na.rm = TRUE),
