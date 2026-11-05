@@ -43,6 +43,7 @@ plpTasks       <- env("BENCH_PLP_TASKS", "plp:6:1095:1")
 # PLP only); "legacy" (the 4.0 legacy fitter) can be added
 configsToRun   <- strsplit(env("BENCH_CONFIGS", "default,super,3.7.1,newton"), ",")[[1]]
 workloadsToRun <- strsplit(env("BENCH_WORKLOADS", "ps,plp,cox,sccs"), ",")[[1]]   # a subset, e.g. "ps,plp"
+psThreads      <- as.integer(env("BENCH_PS_THREADS", 10))   # threads run folds in parallel: one per fold (10)
 coxOutcomeId   <- NA       # NA: death (4) if it has >= 1000 events in the PS cohort, else AMI (3)
 
 # Install develop (and the Newton branch from a source tarball, if you have one) into separate libraries:
@@ -286,7 +287,7 @@ fitPlan <- function() {
       d <- datasets[i, ]
       if (cfg$config %in% c("super", "newton") && !(d$workload %in% lr)) next # super = default outside LR
       variants <- switch(d$workload,
-        ps = list(c("cv", 8)), plp = list(c("cv", 3)),
+        ps = list(c("cv", psThreads)), plp = list(c("cv", 3)),
         cox = list(c("fixed", 1), c("fixed", 8), c("cv", 8)), sccs = list(c("fit", 1)))
       for (v in variants) rows[[length(rows) + 1]] <- data.frame(cfg, workload = d$workload, design = d$design,
                                                                  variant = v[1], threads = as.integer(v[2]))

@@ -11,7 +11,7 @@ HADES workloads, timed on real OMOP CDM data. Only aggregate results leave the s
 ## Workloads
 
 - **ps**: propensity model as `CohortMethod::createPs()` fits it: new users of lisinopril vs hydrochlorothiazide,
-  default FeatureExtraction covariates, Laplace prior, 10-fold auto CV, 8 threads.
+  default FeatureExtraction covariates, Laplace prior, 10-fold auto CV (1 repetition; `createPs()` defaults to 10), 10 threads (one per fold).
 - **plp**: LASSO as PatientLevelPrediction fits it: type 2 diabetes -> heart failure in 1-1095 days, default
   covariates, 75% training split, 3-fold auto CV, 3 threads.
 - **cox**: Cox outcome model on the PS cohort (death within 5 years where death data are usable, else AMI):
