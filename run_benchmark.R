@@ -461,8 +461,8 @@ runAll <- function() {
   for (pass in passes) {
     full <- readRows(resultsFile)
     keys <- if (is.null(pass$keys)) {
-      if (is.null(full)) character() else unique(full$key[full$rep == 1 & !is.na(full$seconds) & full$seconds < 300 &
-                                                            full$status %in% c("SUCCESS", "OK")])
+      if (is.null(full)) character() else intersect(plan$key, full$key[full$rep == 1 & !is.na(full$seconds) &
+                                                    full$seconds < 300 & full$status %in% c("SUCCESS", "OK")])
     } else pass$keys
     for (key in keys) {
       full <- readRows(resultsFile)
@@ -490,7 +490,7 @@ runAll <- function() {
       eta <- sum(vapply(todo, estimate, numeric(1), smoke = smoke, full = full))
       elapsed <- as.numeric(difftime(Sys.time(), start, units = "secs"))
       say(sprintf("%-46s rep %d %8.1f s  %-10s | %d/%d first runs done, elapsed %s, ETA %s (~%s, budget ends %s)",
-                  key, pass$rep, row$seconds, row$status, length(unique(full$key[full$rep == 1])), nrow(plan),
+                  key, pass$rep, row$seconds, row$status, length(intersect(plan$key, full$key[full$rep == 1])), nrow(plan),
                   hms(elapsed), hms(min(eta, budget - elapsed)), format(Sys.time() + min(eta, budget - elapsed), "%H:%M"),
                   format(start + budget, "%H:%M")))
     }
