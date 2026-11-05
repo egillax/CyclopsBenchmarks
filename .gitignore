@@ -1,0 +1,9 @@
+# Data and results never go into the repository
+cyclops_benchmark_data/
+cyclops_benchmark_results/
+lib/
+*.zip
+*.rds
+*.duckdb
+.Rhistory
+.RData
